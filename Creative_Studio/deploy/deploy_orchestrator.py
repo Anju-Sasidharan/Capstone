@@ -14,6 +14,7 @@
 # limitations under the License.
 
 #!/usr/bin/env python3
+# Modified by Anju: Windows gcloud lookup, GCS_IMAGES_BUCKET passed to the deployed agent.
 """
 Deploy Creative Director Orchestrator for Creative Director Agent Engine
 ==========================================================
@@ -37,7 +38,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-
+import shutil
 import vertexai
 from dotenv import load_dotenv
 from vertexai import Client, agent_engines
@@ -54,7 +55,7 @@ load_dotenv()
 # GOOGLE_CLOUD_LOCATION may be "global" (for preview model routing) — do NOT use it here.
 PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("PROJECT_ID", "")
 PROJECT_NUMBER = os.getenv("GOOGLE_CLOUD_PROJECT_NUMBER") or subprocess.check_output(
-    ["gcloud", "projects", "describe", PROJECT_ID, "--format=value(projectNumber)"],
+    [shutil.which("gcloud") or "gcloud", "projects", "describe", PROJECT_ID, "--format=value(projectNumber)"],
     text=True,
 ).strip()
 LOCATION = (
@@ -210,6 +211,7 @@ def deploy_orchestrator(auto_deploy_specialists=False):
                 "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "true",
                 # SA used to sign GCS image URLs - required for get_image_links tool.
                 "SIGNING_SERVICE_ACCOUNT": f"{PROJECT_NUMBER}-compute@developer.gserviceaccount.com",
+                "GCS_IMAGES_BUCKET": os.getenv("GCS_IMAGES_BUCKET", ""),
             },
         )
 
@@ -318,12 +320,8 @@ async def test_deployed_agent(resource_name: str):
     print(f"✓ Created session: {session['id']}")
 
     # Test query
-    test_query = """Create a social media campaign for:
-    - Product: Eco-friendly coffee brand "GreenBrew"
-    - Target Audience: Gen-Z, environmentally conscious, 18-25 years old
-    - Platform: Instagram
-    - Goal: Brand awareness and drive website traffic
-    """
+    test_query = "Create a complete Instagram campaign for a smart water bottle that tracks hydration, aimed at health-conscious millennials. " \
+    "Three posts. Product-only shots, no people, no text on the product."
     print(f"\n{'─' * 70}")
     print(f"USER: {test_query}")
     print(f"{'─' * 70}\n")
@@ -335,7 +333,6 @@ async def test_deployed_agent(resource_name: str):
         message=test_query,
     ):
         response_count += 1
-        print(f"Event {response_count}: {event}")  # Debug: show all events
         content = event.get("content", {})
         parts = content.get("parts", [])
         for part in parts:
@@ -381,7 +378,7 @@ def cleanup_agent_engine(resource_name: str):
         client = Client(project=PROJECT_ID, location=LOCATION)
 
         # Delete the agent engine
-        client.agent_engines.delete(resource_name=resource_name)
+        client.agent_engines.delete(name=resource_name, force=True)
 
         print("\n" + "=" * 70)
         print("✅ AGENT ENGINE DELETED SUCCESSFULLY!")

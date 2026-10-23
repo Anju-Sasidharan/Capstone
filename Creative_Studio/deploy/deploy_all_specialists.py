@@ -14,6 +14,7 @@
 # limitations under the License.
 
 #!/usr/bin/env python3
+# Modified by Anju
 """
 Deploy all 5 specialist agents to Cloud Run and collect their URLs
 Supports parallel deployment for faster execution
@@ -21,6 +22,7 @@ Supports parallel deployment for faster execution
 
 import asyncio
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -71,6 +73,10 @@ async def run_command_async(
     Returns:
         Tuple of (returncode, stdout, stderr)
     """
+    # Modified by Anju: on Windows gcloud is gcloud.cmd, which Python can't find by bare name
+    if cmd and cmd[0] == "gcloud":
+        cmd = [shutil.which("gcloud") or "gcloud", *cmd[1:]]
+
     process = await asyncio.create_subprocess_exec(
         *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=cwd
     )
@@ -214,9 +220,9 @@ async def deploy_single_agent(
         f"GEMINI_MODEL={gemini_model}"
     )
 
-    # Add GCS bucket for image generation/review agents
+    # Modified by Anju: every agent uses the shared context store, so all five need the bucket
     gcs_bucket = os.getenv("GCS_IMAGES_BUCKET", "")
-    if gcs_bucket and name in ("designer", "critic"):
+    if gcs_bucket:
         print(f"   Adding GCS_IMAGES_BUCKET to {name}...")
         env_vars += f",GCS_IMAGES_BUCKET={gcs_bucket}"
 

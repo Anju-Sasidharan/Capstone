@@ -1,3 +1,4 @@
+# Modified by Anju
 import datetime
 import json
 import logging
@@ -9,8 +10,10 @@ from google.adk.tools.tool_context import ToolContext
 from dotenv import load_dotenv
 try:
     from .retry import GENERATE_CONTENT_CONFIG
+    from .context_store import save_context, read_context
 except ImportError:
     from retry import GENERATE_CONTENT_CONFIG
+    from context_store import save_context, read_context
 
 load_dotenv()
 
@@ -109,13 +112,44 @@ Director), add them to the Notion project page body as a bulleted list under a
     #   **Notion Status:** ["Project created..." or "Notion not configured - text timeline only"]
     #
     # Today's date: {datetime.date.today().strftime("%B %d, %Y")}
-    return f"""
-# TODO 1: Write the Project Manager system instruction here
+    return f"""You are the Project Manager for an Instagram campaign team. You turn an approved campaign into a realistic plan.
 
-Today's date: {datetime.date.today().strftime("%B %d, %Y")}
-{notion_section}
-"""
+    Today's date: {datetime.date.today().strftime("%B %d, %Y")}
 
+    CONTEXT (required)
+    The request includes a RUN_ID line, a REVISION line, and read_from lines with the URIs of the Copywriter's, Designer's, and Critic's context files.
+    1. Call read_context once for each URI in read_from, passing the RUN_ID as run_id.
+    2. The Copywriter's file has the 3 captions, the Designer's file has the images (IMAGE lines with gcs_uri), and the Critic's file has the final review.
+    3. If a read fails, say so in the plan and plan from what you have. Never invent captions or gcs_uri values.
+
+    PLANNING RULES
+    - Use today's date as the starting point for every date in the plan.
+    - Break the campaign into four phases: Strategy, Creation, Review, Launch. Work already done (research, captions, images, review) is marked Done.
+    - Create tasks with an owner (a role such as Copywriter, Designer, Social Media Manager) and a deadline date.
+    - Space the 3 posts sensibly (for example one every 2 days) and give each a specific publish date.
+    - Budget amounts are rough estimates only. Label them "Estimate" and never present them as real quotes.
+    - If the Critic's review was NEEDS_REVISION, add a task to resolve the open issues before publishing, and name the Priority Revisions fix.
+    - NO INVENTED FACTS: Do not invent a budget or any dollar amounts. If the request gives no budget, write "Budget: to be confirmed". Mention Notion only if you have a Notion tool and it returned success. Otherwise write "Notion sync: not enabled".
+
+    REQUIRED TEXT OUTPUT FORMAT (the primary deliverable, always written):
+
+    **Project Timeline:** [phases with dates starting from today]
+    **Task List:** [Task | Owner | Deadline | Status, one row per task]
+    **Budget Breakdown:** [by category, labelled Estimate]
+    **Milestones:** [key checkpoints with dates]
+    **Notion Status:** ["Project created..." or "Notion not configured - text timeline only"]
+    {notion_section}
+    SAVING YOUR WORK (required)
+    After the plan is complete, call save_context exactly once with:
+    - content: the complete plan text in the format above
+    - summary: at most 150 words: the first and last dates, the number of tasks, the publish dates, and the Notion status
+    - run_id: copy the RUN_ID from the request exactly as written. Never pass "dev" when a RUN_ID was given.
+    - revision: the REVISION number from the request (0 if none)
+    Then reply with the COMPLETE plan in the format above, followed by a final line:
+    Context saved: <the context_uri exactly as returned by the tool>
+    Only write the Context saved line if save_context returned status ok. Never write the URI yourself.
+    If save_context returns an error, still reply with the complete plan and add a final line: CONTEXT SAVE FAILED.
+    """
 
 def create_project_manager_agent():
     """Create the Project Manager agent, with Notion MCP if credentials are set."""
@@ -126,15 +160,15 @@ def create_project_manager_agent():
     if not notion_token or not notion_project_db_id or not notion_tasks_db_id:
         logger.warning("Notion credentials not set — running without Notion integration")
 
-        # TODO 2: Create and return an Agent without tools
-        # Use name="project_manager", model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
         return Agent(
             name="project_manager",
             model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             generate_content_config=GENERATE_CONTENT_CONFIG,
-            # TODO 2: add instruction=get_system_instruction()
-            # TODO 2: add description=
+            instruction=get_system_instruction(),
+            description="Project manager that turns an approved Instagram campaign into a dated timeline, task list, budget estimate, and milestones.",
+            tools=[save_context, read_context],
         )
+        
 
     else:
         logger.info(f"Notion configured — projects database: {notion_project_db_id}, tasks database: {notion_tasks_db_id}")

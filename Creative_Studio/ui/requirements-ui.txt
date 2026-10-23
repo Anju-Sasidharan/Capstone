@@ -1,0 +1,3 @@
+streamlit>=1.50
+google-cloud-aiplatform[agent_engines]>=1.132.0,<2.0.0
+python-dotenv>=1.0.0
