@@ -1,3 +1,4 @@
+# Modified by Anju
 """Gemini native image generation tool. Generates image, uploads to GCS, returns URI."""
 import io
 import os
@@ -6,6 +7,7 @@ import uuid
 from google import genai
 from google.adk.tools import ToolContext
 from google.genai import types
+from google.cloud import storage
 
 
 async def generate_image(
@@ -48,40 +50,55 @@ async def generate_image(
     prompt_with_aspect = f"{image_prompt}\n\nGenerate this as a {aspect_hint} image."
 
     try:
-        # TODO 1: Create a genai.Client with vertexai=True, project, and location.
-        # Call client.models.generate_content() with:
-        #   - model=image_model
-        #   - contents=prompt_with_aspect
-        #   - config=types.GenerateContentConfig(
-        #       response_modalities=["IMAGE", "TEXT"],
-        #       http_options=types.HttpOptions(
-        #           retry_options=types.HttpRetryOptions(
-        #               attempts=5, exp_base=2, initial_delay=30,
-        #               http_status_codes=[429, 500, 503, 504],
-        #           ),
-        #           timeout=180_000,
-        #       ),
-        #     )
-        # Store the result in `response`.
-        # Note: retry_options here is essential — image generation quota (DSQ) recovers
-        # slowly, so initial_delay=30s gives the pool time to refill between attempts.
+        # Creating Vertex AI Client anf generate image
+        client= genai.Client(vertexai=True, project=project_id, location=location)
+        response = client.models.generate_content(
+            model=image_model,
+            contents=prompt_with_aspect,
+            config=types.GenerateContentConfig(
+                response_modalities =["IMAGE","TEXT"],
+                http_options=types.HttpOptions(
+                    retry_options= types.HttpRetryOptions(
+                        attempts=5, exp_base=2, initial_delay =30,
+                        http_status_codes=[429, 500, 503, 504],
+                    ),
+                    timeout=180_000,
+                ),
+            ),
+        )
 
-        # TODO 2: Extract image bytes from the response.
+        #  Extract image bytes from the response.
         # Iterate over response.candidates[0].content.parts.
         # Find the first part where part.inline_data is not None.
         # Set image_bytes = part.inline_data.data and mime_type = part.inline_data.mime_type or "image/png".
         # If no image_bytes found, return {"status": "error", "error": "Gemini returned no image data"}.
         image_bytes = None
         mime_type = "image/png"
-
-        # TODO 3: Upload image_bytes to GCS and return the URI.
+        parts = []
+        if response.candidates and response.candidates[0].content:
+            parts = response.candidates[0].content.parts or []
+        for part in parts:
+            if part.inline_data is not None:
+                image_bytes = part.inline_data.data
+                mime_type = part.inline_data.mime_type or "image/png"
+                break
+        if not image_bytes:
+            return {"status": "error", "error": "Gemini returned no image data"}
+        
+        #  Upload image_bytes to GCS and return the URI.
         # - Determine the file extension from mime_type ("jpg" if "jpeg" in mime_type else "png").
         # - Create a storage.Client and get the bucket (bucket_name).
         # - Build blob_name: f"campaign-images/{concept_name}-{uuid.uuid4().hex[:8]}.{ext}"
         # - Upload via blob.upload_from_file(io.BytesIO(image_bytes), content_type=mime_type).
         # - Build gcs_uri = f"gs://{bucket_name}/{blob_name}".
         gcs_uri = None
-
+        ext = "jpg" if "jpeg" in mime_type else "png"
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(bucket_name)
+        blob_name = f"campaign-images/{concept_name}-{uuid.uuid4().hex[:8]}.{ext}"
+        blob = bucket.blob(blob_name)
+        blob.upload_from_file(io.BytesIO(image_bytes), content_type=mime_type)
+        gcs_uri = f"gs://{bucket_name}/{blob_name}"
         # Save as ADK artifact so adk web renders the image inline when testing
         # the Designer directly. Silently skipped when no artifact service is
         # configured (e.g. Cloud Run deployment).

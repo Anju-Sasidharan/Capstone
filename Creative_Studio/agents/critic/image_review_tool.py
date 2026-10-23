@@ -1,3 +1,4 @@
+# Modified by Anju
 """Multimodal image review tool. Loads image from GCS via Part.from_uri()."""
 import os
 from typing import Literal, Optional
@@ -9,12 +10,15 @@ from pydantic import BaseModel, Field
 
 class _GeminiReview(BaseModel):
     """Internal schema used to force structured JSON output from Gemini."""
+    visible_text: str = Field(description="Every piece of text visible in the image, copied exactly as shown, or 'None'")
+    has_text_errors: bool = Field(description="True if ANY visible text is misspelled, garbled, or nonsensical")
+    has_anatomy_errors: bool = Field(description="True if any hand, finger, face, or body part is distorted or has the wrong number of parts")
+    has_product_defects: bool = Field(description="True if the product or its logo is deformed, garbled, or looks wrong")
     score: int = Field(ge=1, le=10, description="Quality score from 1 to 10")
     approval_status: Literal["APPROVED", "NEEDS_REVISION"]
     what_works: str = Field(description="Specific visual strengths observed in the image")
     issues: str = Field(description="Specific problems identified, or 'None' if approved")
     suggestions: str = Field(description="Concrete improvements if NEEDS_REVISION, or 'None' if approved")
-
 
 class ImageReviewResult(BaseModel):
     """Structured result returned to the Critic agent by the review_image tool."""
@@ -28,7 +32,7 @@ class ImageReviewResult(BaseModel):
     error: Optional[str] = None
 
 
-def review_image(gcs_uri: str, concept_name: str, campaign_context: str) -> ImageReviewResult:
+def review_image(gcs_uri: str, concept_name: str, campaign_context: str) -> dict:
     """
     Review an image stored in GCS using Gemini multimodal.
 
@@ -56,44 +60,64 @@ def review_image(gcs_uri: str, concept_name: str, campaign_context: str) -> Imag
         mime_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}
         mime_type = mime_map.get(ext, "image/png")
 
-        # TODO 1: Create an image part from the GCS URI using Part.from_uri().
-        # Pass file_uri=gcs_uri and mime_type=mime_type.
-        # Vertex AI fetches the image server-side - no GCS credentials needed here.
+        # Create an image part from the GCS URI using Part.from_uri().
+        image_part = types.Part.from_uri(file_uri=gcs_uri, mime_type=mime_type)
 
         prompt = f"""You are reviewing an AI-generated image for an Instagram campaign.
 
-Campaign context: {campaign_context}
-Concept name: {concept_name}
+        Campaign context: {campaign_context}
+        Concept name: {concept_name}
 
-Evaluate this image on:
-- Visual quality and composition
-- Brand alignment and audience fit
-- Instagram platform suitability
-- Visual-copy alignment potential
+        Inspect the image closely before judging it. First read all visible text letter by letter. Then examine every hand, finger, and face.
+        Then examine the product and its logo. Report what you find in the defect fields. Do not overlook small errors.
 
-Scoring guide:
-- 9-10: APPROVED (exceptional)
-- 7-8:  APPROVED (good, minor polish only)
-- 5-6:  NEEDS_REVISION (has potential but needs improvement)
-- 1-4:  NEEDS_REVISION (significant issues)
-"""
+        Evaluate this image on:
+        - Visual quality and composition
+        - Brand alignment and audience fit
+        - Instagram platform suitability
+        - Visual-copy alignment potential
 
-        # TODO 2: Call client.models.generate_content() with:
-        #   - model=model
-        #   - contents=[image_part, prompt]
-        #   - config=types.GenerateContentConfig(
-        #       response_schema=_GeminiReview,
-        #       response_mime_type="application/json",
-        #     )
-        # Store the result in `response`.
+        Scoring guide:
+        - 9-10: APPROVED (exceptional)
+        - 7-8:  APPROVED (good, minor polish only)
+        - 5-6:  NEEDS_REVISION (has potential but needs improvement)
+        - 1-4:  NEEDS_REVISION (significant issues)"""
 
-        # TODO 3: Parse the response and return an ImageReviewResult.
-        # Use _GeminiReview.model_validate_json(response.text) to parse structured output.
-        # Return ImageReviewResult(status="success", concept_name=concept_name, **review.model_dump())
+        response = client.models.generate_content(
+            model = model,
+            contents=[image_part,prompt],
+            config=types.GenerateContentConfig(
+                response_schema = _GeminiReview,
+                response_mime_type = "application/json",
+                temperature=0,
+            ),
+        )
+        review = _GeminiReview.model_validate_json(response.text)
+        data = review.model_dump()
 
+        flags = []
+        if data.pop("has_text_errors"):
+            flags.append("garbled or misspelled text")
+        if data.pop("has_anatomy_errors"):
+            flags.append("distorted hands or faces")
+        if data.pop("has_product_defects"):
+            flags.append("deformed product or logo")
+        data.pop("visible_text")
+
+        if flags:
+            data["score"] = min(data["score"], 4)
+            existing = "" if data["issues"].strip().lower() == "none" else data["issues"]
+            data["issues"] = ("Serious defects: " + ", ".join(flags) + ". " + existing).strip()
+            if data["suggestions"].strip().lower() == "none":
+                data["suggestions"] = "Regenerate this image to fix the defects."
+
+        min_score = int(os.environ.get("APPROVAL_MIN_SCORE", "7"))
+        data["approval_status"] = "APPROVED" if data["score"] >= min_score else "NEEDS_REVISION"
+        
     except Exception as e:
         return ImageReviewResult(
             status="error",
             concept_name=concept_name,
             error=str(e),
-        )
+        ).model_dump()
+    return ImageReviewResult(status="success", concept_name=concept_name, **data).model_dump()
