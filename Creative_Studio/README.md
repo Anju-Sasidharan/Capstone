@@ -492,7 +492,10 @@ gcloud storage ls "gs://<bucket>/context/<run_id>/**"
 | `run-20261022-145711-8ae3` | Deployed orchestrator, interactive `chat_deployed.py`, strict Critic threshold (10). Three rounds (scores 4, 9, 9, 9.5). At the cap the user answered "may be" (the agent asked again instead of starting a round), then asked "would it produce better option if i proceed?" (answered, asked again), then "proceed": `get_image_links`, the Project Manager and two `read_context` calls ran and the report was delivered with the human-override label. This is the human-override and ambiguous-reply run for the demo. |
 | `run-20261022-185951-559a` | Streamlit UI running locally, brief "Resin products" (no details). Approved 9/10 after 3 rounds (Copywriter `rev1`, Designer and Critic `rev3`); the report showed the three images inline. |
 | `run-20261022-204657-ffdf` | Streamlit UI on Cloud Run (private service, opened through `gcloud run services proxy`). The brief "3d prints" was too vague, so the Creative Director asked what the product is; after "3d printed products" the campaign was approved 9/10 on the first pass (all five files at `rev0`), with three images shown. |
+<<<<<<< HEAD
 | `run-20261023-001258-0bd9` | Streamlit UI on Cloud Run, after the claim rules (brief "3d print products made of PLAs"). The Critic failed unsupported claims in the first draft (4/10); the copy was approved at 9/10 after one revision, but the printer image kept showing garbled belts and pulleys (scores 4, 6, 4, 6). The cap was reached, the user chose "another round" (round 4, still 6/10) and then "proceed"; the report was labelled "Delivered without full Critic approval (human override)" with the scores Posts 9, Visuals 4, Overall 6. This is the cap, extra-round and human-override run in the web UI. |
+=======
+>>>>>>> 9300aa81e41efa54dbe6e7afc0bb3562474dd74a
 
 To force and record a revision pass, raise the threshold on the Critic service, run a campaign, then set it back:
 
@@ -588,7 +591,10 @@ Problems hit during the build and what fixed them.
 - **Claims in approved copy.** In the Oct 22 run the captions claimed "integrated sensors track your activity levels in real-time" and a first-person skin-glow result; neither is in the brief, and neither the Critic nor the claim lint flagged them. A real campaign needs a human review of product claims.
 - **Deprecated SDK class.** `deploy/delete_old_engines.py` uses `vertexai.Client`, which prints a deprecation warning in favour of `agentplatform.Client`. It still works with the pinned versions.
 - **Project Manager invents statuses.** In the Oct 22 Cloud Run UI run the timeline marked earlier phases "Done" with past dates and the posts "Scheduled", although nothing is scheduled anywhere. Treat the timeline as a proposal.
+<<<<<<< HEAD
 - **Claim rules reduce, but do not remove, invented facts.** On Oct 23 the Critic gained a claim check (it lists every product claim in each caption and compares it with the brief only) and the Copywriter a no-invented-facts rule. In the next run the Critic failed unsupported claims in the first draft ("no toxic off-gassing") and approved the revised copy, but the final captions still described an "on-demand, zero-waste production model" that the brief never mentioned (it came from the Strategist's market research). A person must still check every product claim.
+=======
+>>>>>>> 9300aa81e41efa54dbe6e7afc0bb3562474dd74a
 - **Vague briefs lead to invented product details.** For one-line briefs ("Resin products", "3d prints") the captions claimed gold leaf, heat and UV resistance, "carbon-neutral biocomposites" and generative-AI design, none of which the brief said. A brief with real product facts gives better and safer copy; a person must check every product claim before publishing.
 - **The web UI is a demo.** It has no user login of its own: on Cloud Run it is private (only accounts with the Invoker role can open it, through the proxy). It runs one campaign at a time (`--max-instances=1`) and loses the page state if the browser tab is refreshed (the session itself stays on the server).
 - **Project Manager naming.** The timeline can name posts after the strategy pillars instead of the post titles; the final report also shortens captions (the full text is in the Copywriter's file).
@@ -661,8 +667,11 @@ Remaining (deadline Oct 24):
 
 | Oct 22 (evening) | Built the Streamlit UI (`ui/app.py`); tested it locally with a new brief and deployed it to Cloud Run as a private service opened through the proxy (fixed `--concurrency` after "Rate exceeded."); runs `run-20261022-185951-559a` and `run-20261022-204657-ffdf` |
 
+<<<<<<< HEAD
 | Oct 22-23 | Tightened the Critic and Copywriter instructions against invented product claims (`deploy/patch_claim_rules.py`), redeployed the five specialists and tested through the Cloud Run UI (`run-20261023-001258-0bd9`): invented claims are now caught in the first draft, some still pass |
 
+=======
+>>>>>>> 9300aa81e41efa54dbe6e7afc0bb3562474dd74a
 (Add a row each working day.)
 
 ## 19. Attribution and license
