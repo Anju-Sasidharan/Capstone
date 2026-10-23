@@ -475,7 +475,7 @@ All values are env-configurable (§9); the numbers below are defaults.
 
 ## 9. Configuration (Environment Variables)
 
-> **[as-built v4]** The real variable names are listed in §16.1 row 4 and in the README (section 6).
+> **[as-built v4]** The real variable names are listed in §16.1 row 4 and in the README (section 5).
 
 `.env.example` must define at minimum (placeholders only; real secrets come from Secret Manager):
 
